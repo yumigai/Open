@@ -1,0 +1,169 @@
+using System;
+using System.IO;
+using Aspose.Html.Converters;
+using Aspose.Html.Saving;
+using Aspose.Html.Rendering.Image;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        // 1. 変換元のEPUBファイルパスを指定
+        string sourceEpub = "input.epub";
+        
+        // 2. 出力するJPGファイルパスを指定
+        string outputJpg = "output.jpg";
+
+        try
+        {
+            // 3. EPUBファイルをストリームとして開く
+            using (FileStream fs = File.OpenRead(sourceEpub))
+            {
+                // 4. 画像保存用のオプションを設定（フォーマットをJPEGに指定）
+                ImageSaveOptions options = new ImageSaveOptions(ImageFormat.Jpeg);
+
+                // 5. Converterクラスを使用してEPUBをJPGに変換
+                Converter.ConvertEPUB(fs, options, outputJpg);
+
+                Console.WriteLine("EPUBからJPGへの変換が成功しました！");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"エラーが発生しました: {ex.Message}");
+        }
+    }
+}
+
+
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using TheArtOfDev.HtmlRenderer.WinForms;
+using VersOne.EpubDotNet;
+
+class Program
+{
+    // [STAThread] はHtmlRenderer（内部でWinFormsの仕組みを使用）を安定して動かすために必要です
+    [STAThread]
+    static void Main(string[] args)
+    {
+        string sourceEpub = "input.epub"; // 変換元のEPUB
+        string outputFolder = "./output_pages"; // JPGの保存先フォルダ
+
+        // 出力フォルダの作成
+        if (!Directory.Exists(outputFolder))
+        {
+            Directory.CreateDirectory(outputFolder);
+        }
+
+        try
+        {
+            // 1. EPUBファイルを無料で読み込む
+            EpubBook book = EpubReader.ReadBook(sourceEpub);
+            Console.WriteLine($"書籍タイトル: {book.Title}");
+
+            int pageIndex = 1;
+
+            // 2. EPUB内の各「章（テキストコンテンツ）」をループ処理
+            foreach (EpubTextContentFile textFile in book.ReadingOrder)
+            {
+                // 章のHTMLソースを取得
+                string htmlContent = textFile.Content;
+
+                // 3. HTMLを画像（Bitmap）にレンダリングする
+                // 横幅を一般的な電子書籍サイズ（例: 800px）に指定
+                int width = 800;
+
+                // HtmlRendererを使用して、HTMLをグラフィックとして画像化
+                using (Bitmap bitmap = HtmlRender.RenderToImageGraphics(htmlContent, width))
+                {
+                    if (bitmap != null)
+                    {
+                        // 4. JPGファイルとして保存
+                        string outputJpg = Path.Combine(outputFolder, $"page_{pageIndex:D3}.jpg");
+                        bitmap.Save(outputJpg, ImageFormat.Jpeg);
+
+                        Console.WriteLine($"保存成功: {outputJpg}");
+                        pageIndex++;
+                    }
+                }
+            }
+
+            Console.WriteLine("すべての変換が完了しました！（ウォーターマークなし）");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"エラーが発生しました: {ex.Message}");
+        }
+    }
+}
+
+
+using System;
+using System.IO;
+using System.Linq;
+using VersOne.EpubDotNet;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        string sourceEpub = "manga.epub"; // 変換元のEPUBファイル名
+        string outputFolder = "./extracted_pages"; // 保存先フォルダ名
+
+        // 保存先フォルダの作成
+        if (!Directory.Exists(outputFolder))
+        {
+            Directory.CreateDirectory(outputFolder);
+        }
+
+        try
+        {
+            // 1. EPUBファイルを読み込む
+            EpubBook book = EpubReader.ReadBook(sourceEpub);
+            Console.WriteLine($"書籍タイトル: {book.Title}");
+
+            // 2. 本の「読む順番（ReadingOrder）」に従って、各ページに含まれる画像を抽出する
+            int pageIndex = 1;
+
+            // 各チャプター・ページをループ
+            foreach (var textFile in book.ReadingOrder)
+            {
+                // 現在のページ（HTML）が参照している画像をすべて特定
+                // （漫画のEPUBは通常、1つのHTMLに1つの画像が埋め込まれています）
+                var imagesInPage = book.Content.Images
+                    .Where(img => textFile.Content.Contains(Path.GetFileName(img.FilePath)))
+                    .ToList();
+
+                foreach (var imageFile in imagesInPage)
+                {
+                    // 画像のバイナリデータ（バイト配列）を取得
+                    byte[] imageBytes = imageFile.Content;
+
+                    // 元の拡張子（.jpg, .png など）をそのまま維持して保存
+                    // ※元がPNGの場合でも、劣化させずにそのまま取り出せます
+                    string extension = Path.GetExtension(imageFile.FilePath).ToLower();
+                    if (string.IsNullOrEmpty(extension)) extension = ".jpg"; // 念のため
+
+                    // 連番ファイル名を生成 (例: page_001.jpg)
+                    string outputFileName = Path.Combine(outputFolder, $"page_{pageIndex:D3}{extension}");
+
+                    // 3. ファイルをそのままディスクに書き出す（超高速・最高画質）
+                    File.WriteAllBytes(outputFileName, imageBytes);
+
+                    Console.WriteLine($"ページ {pageIndex} を保存しました: {outputFileName}");
+                    pageIndex++;
+                }
+            }
+
+            Console.WriteLine($"\nすべての画像抽出が完了しました！ ({pageIndex - 1}枚)");
+            Console.WriteLine($"保存先: {Path.GetFullPath(outputFolder)}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"エラーが発生しました: {ex.Message}");
+        }
+    }
+}
